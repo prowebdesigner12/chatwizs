@@ -59,7 +59,7 @@ import {
   BarChart,
   Bar
 } from 'recharts';
-import { auth, db, signInWithFacebook, signUpWithEmail, loginWithEmail, handleFirestoreError, OperationType } from './firebase';
+import { auth, db, signInWithFacebook, signUpWithEmail, loginWithEmail, loginAnonymously, handleFirestoreError, OperationType } from './firebase';
 import { onAuthStateChanged, signOut, User } from 'firebase/auth';
 import { collection, query, where, onSnapshot, addDoc, deleteDoc, doc, updateDoc, serverTimestamp, getDoc } from 'firebase/firestore';
 
@@ -91,6 +91,18 @@ const Navbar = ({ onNavigate }: { onNavigate: (page: Page) => void }) => {
             <a href="#features" className="text-slate-600 dark:text-slate-400 hover:text-indigo-600 transition-colors font-medium">Features</a>
             <a href="#pricing" className="text-slate-600 dark:text-slate-400 hover:text-indigo-600 transition-colors font-medium">Pricing</a>
             <a href="#about" className="text-slate-600 dark:text-slate-400 hover:text-indigo-600 transition-colors font-medium">About</a>
+            <button 
+              onClick={async () => {
+                try {
+                  await loginAnonymously();
+                } catch (e) {
+                  onNavigate('dashboard');
+                }
+              }}
+              className="text-xs font-bold text-slate-400 hover:text-indigo-600 transition-colors"
+            >
+              Bypass
+            </button>
             <button 
               onClick={() => onNavigate('dashboard')}
               className="bg-indigo-600 text-white px-5 py-2 rounded-full font-medium hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-200 dark:shadow-none"
@@ -184,8 +196,17 @@ const LandingPage = ({ onStart }: { onStart: () => void }) => (
             >
               Get Started Free <ArrowRight className="w-5 h-5" />
             </button>
-            <button className="px-8 py-4 bg-white dark:bg-slate-800 text-slate-900 dark:text-white border border-slate-200 dark:border-slate-700 rounded-2xl font-bold text-lg hover:bg-slate-50 dark:hover:bg-slate-700 transition-all">
-              Book a Demo
+            <button 
+              onClick={async () => {
+                try {
+                  await loginAnonymously();
+                } catch (e) {
+                  onStart();
+                }
+              }}
+              className="px-8 py-4 bg-white dark:bg-slate-800 text-slate-900 dark:text-white border border-slate-200 dark:border-slate-700 rounded-2xl font-bold text-lg hover:bg-slate-50 dark:hover:bg-slate-700 transition-all"
+            >
+              Quick Bypass (Demo)
             </button>
           </div>
         </motion.div>
@@ -1602,6 +1623,19 @@ const AuthView = ({ onAuthSuccess }: { onAuthSuccess: (user: User) => void }) =>
     }
   };
 
+  const handleBypass = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const user = await loginAnonymously();
+      onAuthSuccess(user);
+    } catch (err: any) {
+      setError(err.message || "Bypass failed. Please try another method.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -1707,12 +1741,20 @@ const AuthView = ({ onAuthSuccess }: { onAuthSuccess: (user: User) => void }) =>
           Facebook
         </button>
         
-        <div className="mt-8 text-center">
+        <div className="mt-8 text-center space-y-4">
           <button 
             onClick={() => setIsLogin(!isLogin)}
-            className="text-sm font-bold text-indigo-600 hover:underline"
+            className="text-sm font-bold text-indigo-600 hover:underline block w-full"
           >
             {isLogin ? "Don't have an account? Sign up" : "Already have an account? Sign in"}
+          </button>
+          
+          <button 
+            onClick={handleBypass}
+            disabled={loading}
+            className="text-xs font-medium text-slate-400 hover:text-indigo-600 transition-colors"
+          >
+            Skip for now (Demo Bypass)
           </button>
         </div>
       </motion.div>
@@ -1721,7 +1763,7 @@ const AuthView = ({ onAuthSuccess }: { onAuthSuccess: (user: User) => void }) =>
 };
 
 // --- WhatsApp Accounts View ---
-const WhatsAppAccountsView = ({ user }: { user: User }) => {
+const WhatsAppAccountsView = ({ user, onBypass }: { user: User, onBypass?: () => void }) => {
   const [accounts, setAccounts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -1802,13 +1844,23 @@ const WhatsAppAccountsView = ({ user }: { user: User }) => {
               To start using ChatWizs, you need to connect at least one WhatsApp Business API number. 
               Follow the steps in your Facebook Developer Console to get your credentials.
             </p>
-            <button 
-              onClick={() => setIsAddModalOpen(true)}
-              className="bg-indigo-600 text-white px-8 py-4 rounded-2xl font-bold hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-100 dark:shadow-none flex items-center gap-2 mx-auto"
-            >
-              <Plus className="w-5 h-5" />
-              Connect Your First Number
-            </button>
+            <div className="flex flex-col gap-3">
+              <button 
+                onClick={() => setIsAddModalOpen(true)}
+                className="bg-indigo-600 text-white px-8 py-4 rounded-2xl font-bold hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-100 dark:shadow-none flex items-center gap-2 mx-auto"
+              >
+                <Plus className="w-5 h-5" />
+                Connect Your First Number
+              </button>
+              {onBypass && (
+                <button 
+                  onClick={onBypass}
+                  className="text-sm font-medium text-slate-400 hover:text-indigo-600 transition-colors"
+                >
+                  Skip for now (Demo Mode)
+                </button>
+              )}
+            </div>
           </div>
         ) : accounts.map((acc) => (
           <motion.div 
@@ -1960,6 +2012,7 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [hasAccounts, setHasAccounts] = useState<boolean | null>(null);
+  const [onboardingBypassed, setOnboardingBypassed] = useState(false);
 
   const [userRole, setUserRole] = useState<UserRole>('user');
   const [isDarkMode, setIsDarkMode] = useState(false);
@@ -2002,8 +2055,8 @@ export default function App() {
         unsubscribeAccounts = onSnapshot(q, (snapshot) => {
           const count = snapshot.docs.length;
           setHasAccounts(count > 0);
-          // If no accounts, force to accounts tab for onboarding
-          if (count === 0) {
+          // If no accounts and not bypassed, force to accounts tab for onboarding
+          if (count === 0 && !onboardingBypassed) {
             setActiveTab('accounts');
           }
         });
@@ -2218,7 +2271,15 @@ export default function App() {
               transition={{ duration: 0.2 }}
             >
               {activeTab === 'overview' && <DashboardOverview />}
-              {activeTab === 'accounts' && currentUser && <WhatsAppAccountsView user={currentUser} />}
+              {activeTab === 'accounts' && currentUser && (
+                <WhatsAppAccountsView 
+                  user={currentUser} 
+                  onBypass={() => {
+                    setOnboardingBypassed(true);
+                    setActiveTab('overview');
+                  }} 
+                />
+              )}
               {activeTab === 'inbox' && <InboxView />}
               {activeTab === 'bulk' && (
                 <BulkMessagingView 

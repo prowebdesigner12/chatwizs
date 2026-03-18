@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth, FacebookAuthProvider, signInWithPopup, signOut, onAuthStateChanged, User, createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile } from 'firebase/auth';
+import { getAuth, FacebookAuthProvider, signInWithPopup, signOut, onAuthStateChanged, User, createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile, signInAnonymously } from 'firebase/auth';
 import { getFirestore, doc, setDoc, getDoc, collection, query, where, onSnapshot, addDoc, updateDoc, deleteDoc, getDocFromServer } from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
 
@@ -13,6 +13,17 @@ export const facebookProvider = new FacebookAuthProvider();
 // Add scopes for WhatsApp Business API if needed
 facebookProvider.addScope('whatsapp_business_management');
 facebookProvider.addScope('whatsapp_business_messaging');
+
+// Helper for Anonymous Login (Bypass)
+export const loginAnonymously = async () => {
+  try {
+    const result = await signInAnonymously(auth);
+    return result.user;
+  } catch (error) {
+    console.error("Anonymous Login Error:", error);
+    throw error;
+  }
+};
 
 // Helper for Email Signup
 export const signUpWithEmail = async (email: string, pass: string, name: string) => {
