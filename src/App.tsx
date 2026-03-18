@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { 
   MessageSquare, 
   Send, 
@@ -38,7 +38,12 @@ import {
   Save,
   BookOpen,
   Moon,
-  Sun
+  Sun,
+  Facebook,
+  LogOut,
+  Trash2,
+  RefreshCw,
+  Check
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -54,11 +59,14 @@ import {
   BarChart,
   Bar
 } from 'recharts';
+import { auth, db, signInWithFacebook, signUpWithEmail, loginWithEmail, handleFirestoreError, OperationType } from './firebase';
+import { onAuthStateChanged, signOut, User } from 'firebase/auth';
+import { collection, query, where, onSnapshot, addDoc, deleteDoc, doc, updateDoc, serverTimestamp, getDoc } from 'firebase/firestore';
 
 // --- Types ---
-type Page = 'landing' | 'dashboard';
+type Page = 'landing' | 'dashboard' | 'auth';
 type UserRole = 'admin' | 'manager' | 'user';
-type DashboardTab = 'overview' | 'inbox' | 'bulk' | 'ads' | 'templates' | 'settings' | 'users';
+type DashboardTab = 'overview' | 'inbox' | 'bulk' | 'ads' | 'templates' | 'settings' | 'users' | 'accounts';
 
 // --- Components ---
 
@@ -1570,6 +1578,377 @@ const UsersView = () => (
   </div>
 );
 
+// --- Auth View ---
+const AuthView = ({ onAuthSuccess }: { onAuthSuccess: (user: User) => void }) => {
+  const [isLogin, setIsLogin] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [formData, setFormData] = useState({
+    email: '',
+    password: '',
+    name: ''
+  });
+
+  const handleFacebookLogin = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const user = await signInWithFacebook();
+      onAuthSuccess(user);
+    } catch (err: any) {
+      setError(err.message || "Failed to login with Facebook");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError(null);
+    try {
+      if (isLogin) {
+        const user = await loginWithEmail(formData.email, formData.password);
+        onAuthSuccess(user);
+      } else {
+        const user = await signUpWithEmail(formData.email, formData.password, formData.name);
+        onAuthSuccess(user);
+      }
+    } catch (err: any) {
+      setError(err.message || "Authentication failed");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-900 flex items-center justify-center p-4">
+      <motion.div 
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="bg-white dark:bg-slate-800 p-8 rounded-3xl shadow-xl border border-slate-200 dark:border-slate-700 max-w-md w-full"
+      >
+        <div className="text-center mb-8">
+          <div className="w-16 h-16 bg-indigo-600 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg shadow-indigo-200 dark:shadow-none">
+            <Zap className="text-white w-8 h-8" />
+          </div>
+          <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">
+            {isLogin ? 'Welcome Back' : 'Create Account'}
+          </h2>
+          <p className="text-slate-500 dark:text-slate-400">
+            {isLogin ? 'Sign in to manage your WhatsApp Business API' : 'Join ChatWizs to scale your conversations'}
+          </p>
+        </div>
+        
+        {error && (
+          <div className="mb-6 p-4 bg-rose-50 dark:bg-rose-900/20 text-rose-600 dark:text-rose-400 rounded-xl text-sm flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 flex-shrink-0" />
+            <span>{error}</span>
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit} className="space-y-4 mb-6">
+          {!isLogin && (
+            <div>
+              <label className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2 block">Full Name</label>
+              <input 
+                required
+                type="text" 
+                placeholder="John Doe"
+                value={formData.name}
+                onChange={e => setFormData({...formData, name: e.target.value})}
+                className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
+          )}
+          <div>
+            <label className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2 block">Email Address</label>
+            <input 
+              required
+              type="email" 
+              placeholder="name@company.com"
+              value={formData.email}
+              onChange={e => setFormData({...formData, email: e.target.value})}
+              className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2 block">Password</label>
+            <input 
+              required
+              type="password" 
+              placeholder="••••••••"
+              value={formData.password}
+              onChange={e => setFormData({...formData, password: e.target.value})}
+              className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500"
+            />
+          </div>
+          <button 
+            type="submit"
+            disabled={loading}
+            className="w-full bg-indigo-600 text-white py-4 rounded-2xl font-bold hover:bg-indigo-700 transition-all disabled:opacity-50 shadow-lg shadow-indigo-100 dark:shadow-none flex items-center justify-center gap-2"
+          >
+            {loading && <RefreshCw className="w-5 h-5 animate-spin" />}
+            {isLogin ? 'Sign In' : 'Create Account'}
+          </button>
+        </form>
+
+        <div className="relative mb-6">
+          <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-slate-100 dark:border-slate-700"></div></div>
+          <div className="relative flex justify-center text-xs uppercase"><span className="bg-white dark:bg-slate-800 px-2 text-slate-400">Or continue with</span></div>
+        </div>
+
+        <button 
+          onClick={handleFacebookLogin}
+          disabled={loading}
+          className="w-full bg-[#1877F2] text-white py-4 rounded-2xl font-bold flex items-center justify-center gap-3 hover:bg-[#166fe5] transition-all disabled:opacity-50 shadow-lg shadow-blue-100 dark:shadow-none"
+        >
+          <Facebook className="w-6 h-6" />
+          Facebook
+        </button>
+        
+        <div className="mt-8 text-center">
+          <button 
+            onClick={() => setIsLogin(!isLogin)}
+            className="text-sm font-bold text-indigo-600 hover:underline"
+          >
+            {isLogin ? "Don't have an account? Sign up" : "Already have an account? Sign in"}
+          </button>
+        </div>
+      </motion.div>
+    </div>
+  );
+};
+
+// --- WhatsApp Accounts View ---
+const WhatsAppAccountsView = ({ user }: { user: User }) => {
+  const [accounts, setAccounts] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [newAccount, setNewAccount] = useState({
+    phoneNumber: '',
+    phoneNumberId: '',
+    wabaId: '',
+    accessToken: ''
+  });
+
+  useEffect(() => {
+    const q = query(collection(db, 'whatsapp_accounts'), where('uid', '==', user.uid));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const accs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setAccounts(accs);
+      setLoading(false);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'whatsapp_accounts');
+    });
+    return () => unsubscribe();
+  }, [user.uid]);
+
+  const handleAddAccount = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await addDoc(collection(db, 'whatsapp_accounts'), {
+        ...newAccount,
+        uid: user.uid,
+        status: 'pending',
+        verified: false,
+        createdAt: new Date().toISOString()
+      });
+      setIsAddModalOpen(false);
+      setNewAccount({ phoneNumber: '', phoneNumberId: '', wabaId: '', accessToken: '' });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.CREATE, 'whatsapp_accounts');
+    }
+  };
+
+  const handleDeleteAccount = async (id: string) => {
+    if (window.confirm('Are you sure you want to remove this WhatsApp account?')) {
+      try {
+        await deleteDoc(doc(db, 'whatsapp_accounts', id));
+      } catch (error) {
+        handleFirestoreError(error, OperationType.DELETE, 'whatsapp_accounts');
+      }
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
+        <div>
+          <h2 className="text-2xl font-bold text-slate-900 dark:text-white">WhatsApp Accounts</h2>
+          <p className="text-slate-500 dark:text-slate-400">Manage multiple WhatsApp Business API numbers</p>
+        </div>
+        <button 
+          onClick={() => setIsAddModalOpen(true)}
+          className="bg-indigo-600 text-white px-6 py-3 rounded-2xl font-bold flex items-center gap-2 hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100 dark:shadow-none"
+        >
+          <Plus className="w-5 h-5" />
+          Add New Number
+        </button>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {loading ? (
+          [1, 2, 3].map(i => (
+            <div key={i} className="bg-white dark:bg-slate-800 p-6 rounded-3xl border border-slate-200 dark:border-slate-700 animate-pulse h-48" />
+          ))
+        ) : accounts.length === 0 ? (
+          <div className="col-span-full bg-white dark:bg-slate-800 p-12 rounded-3xl border border-dashed border-slate-300 dark:border-slate-700 text-center">
+            <div className="w-20 h-20 bg-indigo-50 dark:bg-indigo-900/30 rounded-full flex items-center justify-center mx-auto mb-6">
+              <Smartphone className="w-10 h-10 text-indigo-600 dark:text-indigo-400" />
+            </div>
+            <h3 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">Onboard your WhatsApp API</h3>
+            <p className="text-slate-500 dark:text-slate-400 mb-8 max-w-md mx-auto">
+              To start using ChatWizs, you need to connect at least one WhatsApp Business API number. 
+              Follow the steps in your Facebook Developer Console to get your credentials.
+            </p>
+            <button 
+              onClick={() => setIsAddModalOpen(true)}
+              className="bg-indigo-600 text-white px-8 py-4 rounded-2xl font-bold hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-100 dark:shadow-none flex items-center gap-2 mx-auto"
+            >
+              <Plus className="w-5 h-5" />
+              Connect Your First Number
+            </button>
+          </div>
+        ) : accounts.map((acc) => (
+          <motion.div 
+            key={acc.id}
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-white dark:bg-slate-800 p-6 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md transition-all group"
+          >
+            <div className="flex justify-between items-start mb-4">
+              <div className="w-12 h-12 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 rounded-2xl flex items-center justify-center">
+                <Smartphone className="w-6 h-6" />
+              </div>
+              <div className="flex items-center gap-2">
+                <span className={`px-2 py-1 rounded-lg text-[10px] font-bold uppercase ${
+                  acc.status === 'active' ? 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400' :
+                  'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400'
+                }`}>
+                  {acc.status}
+                </span>
+                <button 
+                  onClick={() => handleDeleteAccount(acc.id)}
+                  className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-lg transition-all opacity-0 group-hover:opacity-100"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+            <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-1">{acc.phoneNumber}</h3>
+            <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">ID: {acc.phoneNumberId}</p>
+            <div className="flex items-center justify-between pt-4 border-t border-slate-100 dark:border-slate-700">
+              <div className="flex items-center gap-2">
+                {acc.verified ? (
+                  <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                ) : (
+                  <AlertCircle className="w-4 h-4 text-amber-500" />
+                )}
+                <span className="text-xs font-medium text-slate-600 dark:text-slate-400">
+                  {acc.verified ? 'Verified' : 'Pending Verification'}
+                </span>
+              </div>
+              <button className="text-xs font-bold text-indigo-600 hover:underline">Manage</button>
+            </div>
+          </motion.div>
+        ))}
+      </div>
+
+      {/* Add Account Modal */}
+      <AnimatePresence>
+        {isAddModalOpen && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsAddModalOpen(false)}
+              className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="relative bg-white dark:bg-slate-800 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-700 w-full max-w-lg overflow-hidden"
+            >
+              <div className="p-6 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center">
+                <h3 className="text-xl font-bold text-slate-900 dark:text-white">Connect WhatsApp Number</h3>
+                <button onClick={() => setIsAddModalOpen(false)} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-xl text-slate-400">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <form onSubmit={handleAddAccount} className="p-6 space-y-4">
+                <div>
+                  <label className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2 block">Phone Number</label>
+                  <input 
+                    required
+                    type="text" 
+                    placeholder="+1 234 567 8900"
+                    value={newAccount.phoneNumber}
+                    onChange={e => setNewAccount({...newAccount, phoneNumber: e.target.value})}
+                    className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2 block">Phone Number ID</label>
+                    <input 
+                      required
+                      type="text" 
+                      placeholder="e.g. 1029384756"
+                      value={newAccount.phoneNumberId}
+                      onChange={e => setNewAccount({...newAccount, phoneNumberId: e.target.value})}
+                      className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2 block">WABA ID</label>
+                    <input 
+                      required
+                      type="text" 
+                      placeholder="e.g. 5647382910"
+                      value={newAccount.wabaId}
+                      onChange={e => setNewAccount({...newAccount, wabaId: e.target.value})}
+                      className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2 block">System User Access Token</label>
+                  <input 
+                    required
+                    type="password" 
+                    placeholder="EAAG..."
+                    value={newAccount.accessToken}
+                    onChange={e => setNewAccount({...newAccount, accessToken: e.target.value})}
+                    className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+                <div className="pt-4 flex gap-3">
+                  <button 
+                    type="button"
+                    onClick={() => setIsAddModalOpen(false)}
+                    className="flex-1 px-6 py-3 rounded-2xl font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 transition-all"
+                  >
+                    Cancel
+                  </button>
+                  <button 
+                    type="submit"
+                    className="flex-1 bg-indigo-600 text-white px-6 py-3 rounded-2xl font-bold hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100 dark:shadow-none"
+                  >
+                    Connect Account
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+};
+
 // --- Main App ---
 
 export default function App() {
@@ -1578,6 +1957,12 @@ export default function App() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [activeChatId, setActiveChatId] = useState<number | null>(null);
   const [isMobile, setIsMobile] = useState(false);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [hasAccounts, setHasAccounts] = useState<boolean | null>(null);
+
+  const [userRole, setUserRole] = useState<UserRole>('user');
+  const [isDarkMode, setIsDarkMode] = useState(false);
 
   // Handle window resize for mobile detection
   React.useEffect(() => {
@@ -1594,8 +1979,48 @@ export default function App() {
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
-  const [userRole, setUserRole] = useState<UserRole>('admin');
-  const [isDarkMode, setIsDarkMode] = useState(false);
+
+  // Handle Auth State
+  useEffect(() => {
+    let unsubscribeAccounts: (() => void) | undefined;
+
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      setCurrentUser(user);
+      if (user) {
+        // Fetch user profile to get role
+        try {
+          const userDoc = await getDoc(doc(db, 'users', user.uid));
+          if (userDoc.exists()) {
+            setUserRole(userDoc.data().role || 'user');
+          }
+        } catch (error) {
+          console.error("Error fetching user profile:", error);
+        }
+
+        // Check for accounts
+        const q = query(collection(db, 'whatsapp_accounts'), where('uid', '==', user.uid));
+        unsubscribeAccounts = onSnapshot(q, (snapshot) => {
+          const count = snapshot.docs.length;
+          setHasAccounts(count > 0);
+          // If no accounts, force to accounts tab for onboarding
+          if (count === 0) {
+            setActiveTab('accounts');
+          }
+        });
+
+        if (currentPage === 'auth') setCurrentPage('dashboard');
+      } else {
+        setHasAccounts(null);
+        if (currentPage === 'dashboard') setCurrentPage('auth');
+        if (unsubscribeAccounts) unsubscribeAccounts();
+      }
+      setAuthLoading(false);
+    });
+    return () => {
+      unsubscribe();
+      if (unsubscribeAccounts) unsubscribeAccounts();
+    };
+  }, [currentPage]);
 
   // Apply dark mode class to root
   React.useEffect(() => {
@@ -1621,6 +2046,7 @@ export default function App() {
   // Define sidebar items based on role
   const sidebarItems = [
     { id: 'overview', icon: <LayoutDashboard className="w-5 h-5" />, label: 'Overview', roles: ['admin', 'manager'] },
+    { id: 'accounts', icon: <Smartphone className="w-5 h-5" />, label: 'Accounts', roles: ['admin', 'manager', 'user'] },
     { id: 'inbox', icon: <MessageSquare className="w-5 h-5" />, label: 'Inbox', roles: ['admin', 'manager', 'user'] },
     { id: 'bulk', icon: <Send className="w-5 h-5" />, label: 'Bulk Messaging', roles: ['admin', 'manager'] },
     { id: 'ads', icon: <BarChart3 className="w-5 h-5" />, label: 'Ads Manager', roles: ['admin', 'manager'] },
@@ -1636,8 +2062,33 @@ export default function App() {
     }
   }, [userRole]);
 
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+      setCurrentPage('landing');
+    } catch (error) {
+      console.error("Logout Error:", error);
+    }
+  };
+
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-slate-50 dark:bg-slate-900 flex items-center justify-center">
+        <RefreshCw className="w-8 h-8 text-indigo-600 animate-spin" />
+      </div>
+    );
+  }
+
   if (currentPage === 'landing') {
-    return <LandingPage onStart={() => setCurrentPage('dashboard')} />;
+    return <LandingPage onStart={() => setCurrentPage(currentUser ? 'dashboard' : 'auth')} />;
+  }
+
+  if (currentPage === 'auth') {
+    return <AuthView onAuthSuccess={() => setCurrentPage('dashboard')} />;
+  }
+
+  if (!currentUser) {
+    return <AuthView onAuthSuccess={() => setCurrentPage('dashboard')} />;
   }
 
   return (
@@ -1699,10 +2150,10 @@ export default function App() {
 
         <div className="p-4 border-t border-slate-100 dark:border-slate-700">
           <button 
-            onClick={() => setCurrentPage('landing')}
+            onClick={handleLogout}
             className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-slate-500 dark:text-slate-400 hover:bg-rose-50 dark:hover:bg-rose-900/20 hover:text-rose-600 transition-all"
           >
-            <X className="w-5 h-5" />
+            <LogOut className="w-5 h-5" />
             {isSidebarOpen && <span className="font-bold text-sm">Logout</span>}
           </button>
         </div>
@@ -1767,6 +2218,7 @@ export default function App() {
               transition={{ duration: 0.2 }}
             >
               {activeTab === 'overview' && <DashboardOverview />}
+              {activeTab === 'accounts' && currentUser && <WhatsAppAccountsView user={currentUser} />}
               {activeTab === 'inbox' && <InboxView />}
               {activeTab === 'bulk' && (
                 <BulkMessagingView 

@@ -1,0 +1,43 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile information",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Firebase Auth UID" },
+        "email": { "type": "string", "description": "User email address" },
+        "displayName": { "type": "string", "description": "User display name" },
+        "photoURL": { "type": "string", "description": "User profile photo URL" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Account creation timestamp" }
+      },
+      "required": ["uid", "email"]
+    },
+    "WhatsAppAccount": {
+      "title": "WhatsApp Account",
+      "description": "WhatsApp Business API account details",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Owner UID" },
+        "phoneNumber": { "type": "string", "description": "WhatsApp phone number" },
+        "phoneNumberId": { "type": "string", "description": "WhatsApp Phone Number ID" },
+        "wabaId": { "type": "string", "description": "WhatsApp Business Account ID" },
+        "accessToken": { "type": "string", "description": "System User Access Token" },
+        "status": { "type": "string", "enum": ["active", "disconnected", "pending"], "description": "Connection status" },
+        "verified": { "type": "boolean", "description": "Whether the number is verified" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "When the account was added" }
+      },
+      "required": ["uid", "phoneNumber", "phoneNumberId", "accessToken"]
+    }
+  },
+  "firestore": {
+    "/users/{uid}": {
+      "schema": "User",
+      "description": "User profiles"
+    },
+    "/whatsapp_accounts/{accountId}": {
+      "schema": "WhatsAppAccount",
+      "description": "Connected WhatsApp accounts"
+    }
+  }
+}

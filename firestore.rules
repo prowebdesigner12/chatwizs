@@ -1,0 +1,111 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: uid
+    // Fields:
+    //   - uid: string (required)
+    //   - email: string (required)
+    //   - displayName: string
+    //   - photoURL: string
+    //   - lastLogin: string (ISO 8601)
+    //
+    // Collection: whatsapp_accounts
+    // Document ID: accountId
+    // Fields:
+    //   - uid: string (required, immutable) - Owner UID
+    //   - phoneNumber: string (required)
+    //   - phoneNumberId: string (required)
+    //   - wabaId: string (required)
+    //   - accessToken: string (required)
+    //   - status: string (enum: ['active', 'disconnected', 'pending'])
+    //   - verified: boolean
+    //   - createdAt: string (ISO 8601)
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isDocOwner() {
+      return isAuthenticated() && request.auth.uid == resource.data.uid;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+          (request.auth.token.email == "prashantbagriya7877@gmail.com" && request.auth.token.email_verified == true));
+    }
+
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    function isValidEmail(email) {
+      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+
+    function isValidUser(data) {
+      return hasRequiredFields(['uid', 'email']) &&
+             data.uid is string &&
+             isValidEmail(data.email);
+    }
+
+    function isValidWhatsAppAccount(data) {
+      return hasRequiredFields(['uid', 'phoneNumber', 'phoneNumberId', 'accessToken']) &&
+             data.uid is string &&
+             data.phoneNumber is string &&
+             data.phoneNumber.size() >= 10 &&
+             data.phoneNumber.size() <= 15 &&
+             data.status in ['active', 'disconnected', 'pending'];
+    }
+
+    // ===============================================================
+    // Match Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow create: if isOwner(userId) && isValidUser(request.resource.data);
+      allow update: if isOwner(userId) && isValidUser(request.resource.data) && (request.resource.data.role == resource.data.role || isAdmin());
+      allow delete: if isAdmin();
+    }
+
+    match /whatsapp_accounts/{accountId} {
+      allow read: if isDocOwner() || isAdmin();
+      allow create: if isAuthenticated() && 
+                      request.resource.data.uid == request.auth.uid && 
+                      isValidWhatsAppAccount(request.resource.data);
+      allow update: if isDocOwner() && 
+                      request.resource.data.uid == resource.data.uid && 
+                      isValidWhatsAppAccount(request.resource.data);
+      allow delete: if isDocOwner() || isAdmin();
+    }
+
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
