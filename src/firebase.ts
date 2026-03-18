@@ -19,7 +19,12 @@ export const loginAnonymously = async () => {
   try {
     const result = await signInAnonymously(auth);
     return result.user;
-  } catch (error) {
+  } catch (error: any) {
+    if (error.code === 'auth/admin-restricted-operation' || error.code === 'auth/operation-not-allowed') {
+      const msg = "Anonymous authentication is not enabled in your Firebase Console. Please go to Authentication > Sign-in method and enable 'Anonymous'.";
+      console.error(msg);
+      throw new Error(msg);
+    }
     console.error("Anonymous Login Error:", error);
     throw error;
   }
@@ -41,7 +46,12 @@ export const signUpWithEmail = async (email: string, pass: string, name: string)
     });
     
     return result.user;
-  } catch (error) {
+  } catch (error: any) {
+    if (error.code === 'auth/operation-not-allowed') {
+      const msg = "Email/Password authentication is not enabled in your Firebase Console. Please go to Authentication > Sign-in method and enable 'Email/Password'.";
+      console.error(msg);
+      throw new Error(msg);
+    }
     console.error("Signup Error:", error);
     throw error;
   }
@@ -52,7 +62,12 @@ export const loginWithEmail = async (email: string, pass: string) => {
   try {
     const result = await signInWithEmailAndPassword(auth, email, pass);
     return result.user;
-  } catch (error) {
+  } catch (error: any) {
+    if (error.code === 'auth/operation-not-allowed') {
+      const msg = "Email/Password authentication is not enabled in your Firebase Console. Please go to Authentication > Sign-in method and enable 'Email/Password'.";
+      console.error(msg);
+      throw new Error(msg);
+    }
     console.error("Login Error:", error);
     throw error;
   }
