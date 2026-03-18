@@ -1,37 +1,81 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+
     // ===============================================================
     // Assumed Data Model
     // ===============================================================
     //
     // Collection: users
-    // Document ID: uid
+    // Document ID: userId (Auth UID)
     // Fields:
     //   - uid: string (required)
-    //   - email: string (required)
-    //   - displayName: string
-    //   - photoURL: string
-    //   - lastLogin: string (ISO 8601)
+    //   - email: string (required, email)
+    //   - displayName: string (required)
+    //   - photoURL: string (optional, url)
+    //   - role: string (required, enum: admin, manager, user)
+    //   - createdAt: string (required, date-time)
+    //   - lastLogin: string (optional, date-time)
     //
     // Collection: whatsapp_accounts
     // Document ID: accountId
     // Fields:
-    //   - uid: string (required, immutable) - Owner UID
+    //   - uid: string (required) - Owner UID
     //   - phoneNumber: string (required)
     //   - phoneNumberId: string (required)
     //   - wabaId: string (required)
     //   - accessToken: string (required)
-    //   - status: string (enum: ['active', 'disconnected', 'pending'])
-    //   - verified: boolean
-    //   - createdAt: string (ISO 8601)
+    //   - status: string (required, enum: active, pending, inactive)
+    //   - verified: boolean (required)
+    //   - createdAt: string (required, date-time)
+    //
+    // Collection: campaigns
+    // Document ID: campaignId
+    // Fields:
+    //   - uid: string (required) - Creator UID
+    //   - name: string (required)
+    //   - sentCount: number (required)
+    //   - openRate: string (required)
+    //   - clickRate: string (required)
+    //   - status: string (required, enum: Sending, Completed, Paused, Active, Scheduled)
+    //   - scheduledDate: string (optional, date-time)
+    //   - messageContent: string (required)
+    //   - createdAt: string (required, date-time)
+    //
+    // Collection: templates
+    // Document ID: templateId
+    // Fields:
+    //   - uid: string (required) - Creator UID
+    //   - name: string (required)
+    //   - content: string (required)
+    //   - status: string (required, enum: Approved, Pending, Rejected)
+    //   - category: string (required, enum: Marketing, Transactional, Utility)
+    //   - createdAt: string (required, date-time)
+    //
+    // Collection: chats
+    // Document ID: chatId
+    // Fields:
+    //   - participants: list (required, UIDs)
+    //   - lastMessage: string (optional)
+    //   - lastMessageTime: string (optional, date-time)
+    //   - unreadCount: number (required)
+    //   - name: string (optional)
+    //
+    // Collection: messages (subcollection of chats)
+    // Document ID: messageId
+    // Fields:
+    //   - chatId: string (required)
+    //   - senderId: string (required)
+    //   - text: string (required)
+    //   - timestamp: string (required, date-time)
+    //   - reactions: list (optional, strings)
     //
     // ===============================================================
 
     // ===============================================================
     // Helper Functions
     // ===============================================================
-    
+
     function isAuthenticated() {
       return request.auth != null;
     }
@@ -40,14 +84,14 @@ service cloud.firestore {
       return isAuthenticated() && request.auth.uid == userId;
     }
 
-    function isDocOwner() {
-      return isAuthenticated() && request.auth.uid == resource.data.uid;
-    }
-
     function isAdmin() {
       return isAuthenticated() &&
         (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
           (request.auth.token.email == "prashantbagriya7877@gmail.com" && request.auth.token.email_verified == true));
+    }
+
+    function isParticipant(chatId) {
+      return isAuthenticated() && request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants;
     }
 
     function hasRequiredFields(fields) {
@@ -62,45 +106,101 @@ service cloud.firestore {
       return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
     }
 
+    function isValidUrl(url) {
+      return url is string && (url.matches("^https://.*") || url.matches("^http://.*"));
+    }
+
+    function isValidDateString(dateStr) {
+      return dateStr is string && dateStr.matches("^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}.*Z?$");
+    }
+
     // ===============================================================
     // Domain Validators
     // ===============================================================
 
     function isValidUser(data) {
-      return hasRequiredFields(['uid', 'email']) &&
-             data.uid is string &&
-             isValidEmail(data.email);
+      return hasRequiredFields(['uid', 'email', 'displayName', 'role', 'createdAt']) &&
+             hasOnlyAllowedFields(['uid', 'email', 'displayName', 'photoURL', 'role', 'createdAt', 'lastLogin']) &&
+             data.uid == request.auth.uid &&
+             isValidEmail(data.email) &&
+             data.role in ['admin', 'manager', 'user'] &&
+             isValidDateString(data.createdAt);
     }
 
     function isValidWhatsAppAccount(data) {
-      return hasRequiredFields(['uid', 'phoneNumber', 'phoneNumberId', 'accessToken']) &&
-             data.uid is string &&
-             data.phoneNumber is string &&
-             data.phoneNumber.size() >= 10 &&
-             data.phoneNumber.size() <= 15 &&
-             data.status in ['active', 'disconnected', 'pending'];
+      return hasRequiredFields(['uid', 'phoneNumber', 'phoneNumberId', 'wabaId', 'accessToken', 'status', 'verified', 'createdAt']) &&
+             data.uid == request.auth.uid &&
+             data.status in ['active', 'pending', 'inactive'] &&
+             isValidDateString(data.createdAt);
+    }
+
+    function isValidCampaign(data) {
+      return hasRequiredFields(['uid', 'name', 'sentCount', 'openRate', 'clickRate', 'status', 'messageContent', 'createdAt']) &&
+             data.uid == request.auth.uid &&
+             data.status in ['Sending', 'Completed', 'Paused', 'Active', 'Scheduled'] &&
+             isValidDateString(data.createdAt);
+    }
+
+    function isValidTemplate(data) {
+      return hasRequiredFields(['uid', 'name', 'content', 'status', 'category', 'createdAt']) &&
+             data.uid == request.auth.uid &&
+             data.status in ['Approved', 'Pending', 'Rejected'] &&
+             data.category in ['Marketing', 'Transactional', 'Utility'] &&
+             isValidDateString(data.createdAt);
+    }
+
+    function isValidChat(data) {
+      return hasRequiredFields(['participants', 'unreadCount']) &&
+             request.auth.uid in data.participants &&
+             data.participants.size() >= 1;
+    }
+
+    function isValidMessage(data) {
+      return hasRequiredFields(['chatId', 'senderId', 'text', 'timestamp']) &&
+             data.senderId == request.auth.uid &&
+             isValidDateString(data.timestamp);
     }
 
     // ===============================================================
-    // Match Rules
+    // Rules
     // ===============================================================
 
     match /users/{userId} {
       allow read: if isOwner(userId) || isAdmin();
-      allow create: if isOwner(userId) && isValidUser(request.resource.data);
+      allow create: if isOwner(userId) && isValidUser(request.resource.data) && (request.resource.data.role == 'user' || isAdmin());
       allow update: if isOwner(userId) && isValidUser(request.resource.data) && (request.resource.data.role == resource.data.role || isAdmin());
-      allow delete: if isAdmin();
     }
 
     match /whatsapp_accounts/{accountId} {
-      allow read: if isDocOwner() || isAdmin();
-      allow create: if isAuthenticated() && 
-                      request.resource.data.uid == request.auth.uid && 
-                      isValidWhatsAppAccount(request.resource.data);
-      allow update: if isDocOwner() && 
-                      request.resource.data.uid == resource.data.uid && 
-                      isValidWhatsAppAccount(request.resource.data);
-      allow delete: if isDocOwner() || isAdmin();
+      allow read: if isAuthenticated() && (resource.data.uid == request.auth.uid || isAdmin());
+      allow create: if isAuthenticated() && isValidWhatsAppAccount(request.resource.data);
+      allow update: if isAuthenticated() && resource.data.uid == request.auth.uid && isValidWhatsAppAccount(request.resource.data);
+      allow delete: if isAuthenticated() && (resource.data.uid == request.auth.uid || isAdmin());
+    }
+
+    match /campaigns/{campaignId} {
+      allow read: if isAuthenticated() && (resource.data.uid == request.auth.uid || isAdmin());
+      allow create: if isAuthenticated() && isValidCampaign(request.resource.data);
+      allow update: if isAuthenticated() && resource.data.uid == request.auth.uid && isValidCampaign(request.resource.data);
+      allow delete: if isAuthenticated() && (resource.data.uid == request.auth.uid || isAdmin());
+    }
+
+    match /templates/{templateId} {
+      allow read: if isAuthenticated() && (resource.data.uid == request.auth.uid || isAdmin());
+      allow create: if isAuthenticated() && isValidTemplate(request.resource.data);
+      allow update: if isAuthenticated() && resource.data.uid == request.auth.uid && isValidTemplate(request.resource.data);
+      allow delete: if isAuthenticated() && (resource.data.uid == request.auth.uid || isAdmin());
+    }
+
+    match /chats/{chatId} {
+      allow read: if isAuthenticated() && (request.auth.uid in resource.data.participants || isAdmin());
+      allow create: if isAuthenticated() && isValidChat(request.resource.data);
+      allow update: if isAuthenticated() && (request.auth.uid in resource.data.participants || isAdmin()) && isValidChat(request.resource.data);
+      
+      match /messages/{messageId} {
+        allow read: if isParticipant(chatId) || isAdmin();
+        allow create: if isParticipant(chatId) && isValidMessage(request.resource.data);
+      }
     }
 
     // Default deny

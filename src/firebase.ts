@@ -10,7 +10,6 @@ export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 
 // Auth Providers
 export const facebookProvider = new FacebookAuthProvider();
-// Add scopes for WhatsApp Business API if needed
 facebookProvider.addScope('whatsapp_business_management');
 facebookProvider.addScope('whatsapp_business_messaging');
 

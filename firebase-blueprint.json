@@ -2,42 +2,99 @@
   "entities": {
     "User": {
       "title": "User",
-      "description": "User profile information",
+      "description": "Application user profile",
       "type": "object",
       "properties": {
         "uid": { "type": "string", "description": "Firebase Auth UID" },
-        "email": { "type": "string", "description": "User email address" },
-        "displayName": { "type": "string", "description": "User display name" },
-        "photoURL": { "type": "string", "description": "User profile photo URL" },
-        "createdAt": { "type": "string", "format": "date-time", "description": "Account creation timestamp" }
+        "email": { "type": "string", "format": "email", "description": "User email address" },
+        "displayName": { "type": "string", "description": "User full name" },
+        "photoURL": { "type": "string", "format": "url", "description": "User profile picture URL" },
+        "role": { "type": "string", "enum": ["admin", "manager", "user"], "description": "User access role" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Account creation timestamp" },
+        "lastLogin": { "type": "string", "format": "date-time", "description": "Last login timestamp" }
       },
-      "required": ["uid", "email"]
+      "required": ["uid", "email", "displayName", "role", "createdAt"]
     },
     "WhatsAppAccount": {
       "title": "WhatsApp Account",
-      "description": "WhatsApp Business API account details",
+      "description": "Connected WhatsApp Business API account",
       "type": "object",
       "properties": {
         "uid": { "type": "string", "description": "Owner UID" },
         "phoneNumber": { "type": "string", "description": "WhatsApp phone number" },
-        "phoneNumberId": { "type": "string", "description": "WhatsApp Phone Number ID" },
+        "phoneNumberId": { "type": "string", "description": "Meta Phone Number ID" },
         "wabaId": { "type": "string", "description": "WhatsApp Business Account ID" },
-        "accessToken": { "type": "string", "description": "System User Access Token" },
-        "status": { "type": "string", "enum": ["active", "disconnected", "pending"], "description": "Connection status" },
+        "accessToken": { "type": "string", "description": "Meta Access Token" },
+        "status": { "type": "string", "enum": ["active", "pending", "inactive"], "description": "Account status" },
         "verified": { "type": "boolean", "description": "Whether the number is verified" },
-        "createdAt": { "type": "string", "format": "date-time", "description": "When the account was added" }
+        "createdAt": { "type": "string", "format": "date-time", "description": "Connection timestamp" }
       },
-      "required": ["uid", "phoneNumber", "phoneNumberId", "accessToken"]
+      "required": ["uid", "phoneNumber", "phoneNumberId", "wabaId", "accessToken", "status", "verified", "createdAt"]
+    },
+    "Campaign": {
+      "title": "Campaign",
+      "description": "Bulk messaging campaign",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Creator UID" },
+        "name": { "type": "string", "description": "Campaign name" },
+        "sentCount": { "type": "number", "description": "Number of messages sent" },
+        "openRate": { "type": "string", "description": "Message open rate percentage" },
+        "clickRate": { "type": "string", "description": "Link click rate percentage" },
+        "status": { "type": "string", "enum": ["Sending", "Completed", "Paused", "Active", "Scheduled"], "description": "Campaign status" },
+        "scheduledDate": { "type": "string", "format": "date-time", "description": "Scheduled send time" },
+        "messageContent": { "type": "string", "description": "Content of the message" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Creation timestamp" }
+      },
+      "required": ["uid", "name", "sentCount", "openRate", "clickRate", "status", "messageContent", "createdAt"]
+    },
+    "Template": {
+      "title": "Template",
+      "description": "Message template for approval",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Creator UID" },
+        "name": { "type": "string", "description": "Template name" },
+        "content": { "type": "string", "description": "Template content" },
+        "status": { "type": "string", "enum": ["Approved", "Pending", "Rejected"], "description": "Approval status" },
+        "category": { "type": "string", "enum": ["Marketing", "Transactional", "Utility"], "description": "Template category" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Creation timestamp" }
+      },
+      "required": ["uid", "name", "content", "status", "category", "createdAt"]
+    },
+    "Chat": {
+      "title": "Chat",
+      "description": "Messaging conversation",
+      "type": "object",
+      "properties": {
+        "participants": { "type": "array", "items": { "type": "string" }, "description": "List of participant UIDs" },
+        "lastMessage": { "type": "string", "description": "Last message text" },
+        "lastMessageTime": { "type": "string", "format": "date-time", "description": "Last message timestamp" },
+        "unreadCount": { "type": "number", "description": "Number of unread messages" },
+        "name": { "type": "string", "description": "Chat name (for group or contact name)" }
+      },
+      "required": ["participants", "unreadCount"]
+    },
+    "Message": {
+      "title": "Message",
+      "description": "Individual chat message",
+      "type": "object",
+      "properties": {
+        "chatId": { "type": "string", "description": "Parent chat ID" },
+        "senderId": { "type": "string", "description": "Sender UID" },
+        "text": { "type": "string", "description": "Message text" },
+        "timestamp": { "type": "string", "format": "date-time", "description": "Sent timestamp" },
+        "reactions": { "type": "array", "items": { "type": "string" }, "description": "List of emoji reactions" }
+      },
+      "required": ["chatId", "senderId", "text", "timestamp"]
     }
   },
   "firestore": {
-    "/users/{uid}": {
-      "schema": "User",
-      "description": "User profiles"
-    },
-    "/whatsapp_accounts/{accountId}": {
-      "schema": "WhatsAppAccount",
-      "description": "Connected WhatsApp accounts"
-    }
+    "users/{userId}": { "schema": "User", "description": "User profiles" },
+    "whatsapp_accounts/{accountId}": { "schema": "WhatsAppAccount", "description": "Connected WhatsApp numbers" },
+    "campaigns/{campaignId}": { "schema": "Campaign", "description": "Marketing campaigns" },
+    "templates/{templateId}": { "schema": "Template", "description": "Message templates" },
+    "chats/{chatId}": { "schema": "Chat", "description": "Conversations" },
+    "chats/{chatId}/messages/{messageId}": { "schema": "Message", "description": "Messages within a chat" }
   }
 }
